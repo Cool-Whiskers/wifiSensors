@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head>
+  <title>WIFI</title>
+</head>
+<body>
+  {% if request.GET.id and request.GET.type and request.GET.value %}
+    <h1>{{message}}</h1>
+  {% else %}
+    <h1>Experiment instance not received</h1>
+  {% endif %}
+  </body>
+</html>
