@@ -5,7 +5,7 @@ from .models import Experiment
 class ExperimentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Experiment
-        fields = ['id', 'sensor', 'data_type', 'data']
+        fields = ['id', 'created', 'sensor', 'run', 'data_type', 'data', 'battery_volt']
 
 # # class defined serializer that uses Serializer classes
 # class ExperimentSerializer(serializers.Serializer):

@@ -4,8 +4,10 @@ from django.db import models
 class Experiment(models.Model):
     created = models.DateTimeField(auto_now_add=True)
     sensor = models.CharField(max_length=10, blank=False)
+    run = models.DecimalField(max_digits=10, decimal_places=0, blank=False)
     data_type = models.CharField(max_length=100, blank=False)
     data = models.DecimalField(max_digits=100, decimal_places=6, blank=False)
+    battery_volt = models.DecimalField(max_digits=100, decimal_places=6, blank=False)
 
     class Meta:
         ordering = ['created']

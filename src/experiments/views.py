@@ -1,15 +1,15 @@
-#### API Using Generic Class-Based Views ####
-from .models import Experiment
-from .serializers import ExperimentSerializer
-from rest_framework import generics
-
-class ExperimentList(generics.ListCreateAPIView):
-    queryset = Experiment.objects.all()
-    serializer_class = ExperimentSerializer
-
-class ExperimentDetail(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Experiment.objects.all()
-    serializer_class = ExperimentSerializer
+# #### API Using Generic Class-Based Views ####
+# from .models import Experiment
+# from .serializers import ExperimentSerializer
+# from rest_framework import generics
+#
+# class ExperimentList(generics.ListCreateAPIView):
+#     queryset = Experiment.objects.all()
+#     serializer_class = ExperimentSerializer
+#
+# class ExperimentDetail(generics.RetrieveUpdateDestroyAPIView):
+#     queryset = Experiment.objects.all()
+#     serializer_class = ExperimentSerializer
 
 # #### API using mixin classes ####
 # from .models import Experiment
@@ -95,37 +95,83 @@ class ExperimentDetail(generics.RetrieveUpdateDestroyAPIView):
 #         experiment.delete()
 #         return Response(status=status.HTTP_204_NO_CONTENT)
 
-# ##### API using function based views ######
-# from rest_framework import status
-# from rest_framework.decorators import api_view
-# from rest_framework.response import Response
-# from .models import Experiment
-# from .serializers import ExperimentSerializer
+##### API using function based views ######
+from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import Experiment
+from .serializers import ExperimentSerializer
 
-# from django.shortcuts import render
+from django.shortcuts import render
 # from django.http import HttpResponse, JsonResponse
 # from django.views.decorators.csrf import csrf_exempt
 # from rest_framework.parsers import JSONParser
 # from .models import Experiment
 # from .serializers import ExperimentSerializer
 
-# # More concise and uses named status codes
-# @api_view(['GET', 'POST'])
-# def experiment_list(request, format=None):
-#     """
-#     List all experiments, or create a new experiment.
-#     """
-#     if request.method == 'GET':
-#         experiments = Experiment.objects.all()
-#         serializer = ExperimentSerializer(experiments, many=True)
-#         return Response(serializer.data)
-#
-#     elif request.method == 'POST':
-#         serializer = ExperimentSerializer(data=request.data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+# View experiment data using bokeh
+
+from bokeh.plotting import figure
+from bokeh.embed import components
+from bokeh.models import HoverTool
+
+def experiment_data_view(request, run, *args, **kwargs):
+    y = []
+    t = []
+    v = []
+    experiments = Experiment.objects.filter(run=run)
+    t_start_micro = experiments[0].created.microsecond
+    t_start_sec = experiments[0].created.second
+    t_start_min = experiments[0].created.minute
+    for i in range(0, len(experiments)):
+        t_micro = experiments[i].created.microsecond
+        t_sec = experiments[i].created.second
+        t_min = experiments[i].created.minute
+        t_total = (t_micro * 1e-6) + t_sec + (t_min * 60) - ((t_start_micro * 1e-6) + t_start_sec + (t_start_min * 60))
+        t.append(t_total)
+        v.append(experiments[i].battery_volt)
+        y.append(experiments[i].data)
+    time_start = experiments[0].created
+    title_temp = 'Time-Series of Temperature for Run: ' + str(run) + ', Start Time : ' + str(time_start)
+    title_bat = 'Time-Series of Battery Voltage for Run: ' + str(run) + ', Start Time : ' + str(time_start)
+    plot_temp = figure(title=title_temp, x_axis_label='Time(sec)', y_axis_label='Temperature(C)')
+    plot_temp.line(t, y, legend="Temperature")
+    plot_temp.circle(t, y, fill_color="white", size=8)
+
+    plot_bat = figure(title=title_bat, x_axis_label='Time(sec)', y_axis_label='Voltage (V)')
+    plot_bat.line(t, v, legend="Voltage", line_color="red")
+    plot_bat.circle(t, v, fill_color="white", line_color="red", size=8)
+
+    script_t, div_t = components(plot_temp)
+    script_b, div_b = components(plot_bat)
+
+
+    return render(request, 'data.html', {'script_t': script_t,
+                                         'div_t': div_t,
+                                         'script_b': script_b,
+                                         'div_b': div_b})
+
+# More concise and uses named status codes
+@api_view(['GET', 'POST'])
+def experiment_list(request, format=None):
+    """
+    List all experiments, or create a new experiment.
+    """
+    if request.method == 'GET':
+        experiments = Experiment.objects.all()
+        for i in experiments:
+            print(i.created.microsecond)
+        serializer = ExperimentSerializer(experiments, many=True)
+        return Response(serializer.data)
+
+    elif request.method == 'POST':
+        serializer = ExperimentSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.validated_data['data'] = float(serializer.validated_data.get('data')) / 1.0e6
+            serializer.validated_data['battery_volt'] = float(serializer.validated_data.get('battery_volt')) / 1.0e6
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # @csrf_exempt # Usually not a good idea
 # def experiment_list(request):
@@ -159,31 +205,31 @@ class ExperimentDetail(generics.RetrieveUpdateDestroyAPIView):
 #             return JsonResponse(serializer.data, status=201)
 #         return JsonResponse(serializer.errors, status=400)
 
-# # No longer ties our requests or responses to a given content type
-# @api_view(['GET', 'PUT', 'DELETE'])
-# def experiment_detail(request, pk, format=None):
-#     """
-#     Retrieve, update or delete a experiment.
-#     """
-#     try:
-#         experiment = Experiment.objects.get(pk=pk)
-#     except Experiment.DoesNotExist:
-#         return Response(status=status.HTTP_404_NOT_FOUND)
-#
-#     if request.method == 'GET':
-#         serializer = ExperimentSerializer(experiment)
-#         return Response(serializer.data)
-#
-#     elif request.method == 'PUT':
-#         serializer = ExperimentSerializer(experiment, data=request.data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-#
-#     elif request.method == 'DELETE':
-#         experiment.delete()
-#         return Response(status=status.HTTP_204_NO_CONTENT)
+# No longer ties our requests or responses to a given content type
+@api_view(['GET', 'PUT', 'DELETE'])
+def experiment_detail(request, pk, format=None):
+    """
+    Retrieve, update or delete a experiment.
+    """
+    try:
+        experiment = Experiment.objects.get(pk=pk)
+    except Experiment.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = ExperimentSerializer(experiment)
+        return Response(serializer.data)
+
+    elif request.method == 'PUT':
+        serializer = ExperimentSerializer(experiment, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        experiment.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 # @csrf_exempt
 # def experiment_detail(request, pk):
