@@ -33,47 +33,40 @@ int keyIndex = 0;            // your network key Index number (needed only for W
 int status = WL_IDLE_STATUS;
 // if you don't want to use DNS (and reduce your sketch size)
 // use the numeric IP instead of the name for the server:
-//IPAddress server(74,125,232,128);  // numeric IP for Google (no DNS)
-//char server[] = "http://192.168.86.46:8000/query/?id=test&value=1";    // name address for Google (using DNS)
-IPAddress server = IPAddress(192,168,86,46);
-//192.168.86.46:8000/query/?id=test&value=1
+IPAddress server = IPAddress(X,X,X,X); //Replace X's with IPv4 Address
 
 // Initialize the Ethernet client library
 // with the IP address and port of the server
 // that you want to connect to (port 80 is default for HTTP):
 WiFiClient client;
 
-#define IDENTIFIER 2
-#define UNIT "Temp"
 #define LED 13
+#define VBATPIN A7
 
 // Thermistor
-#define THERMISTORPIN A5
-#define THERMISTORNOMINAL 614.8 //TO DO: Adjust
-#define TEMPERATURENOMINAL 22 //TO DO: Adjust
+#define THERMISTORPIN A5 // Make sure this is right pin
+#define THERMISTORNOMINAL 614.8 //TO DO: Calibrate
+#define TEMPERATURENOMINAL 22 //TO DO: Calibrate
 #define NUMSAMPLES 5
 #define BCOEFFICIENT 3950
-#define SERIESRESISTOR 100 //TO DO: Adjust
+#define SERIESRESISTOR 100 //TO DO: Calibrate
 int samples[NUMSAMPLES];
 
-// Query string
-char GETRequest[100];
-char GETRequest_0[100] = "GET /query/?id=";
-char GETRequest_1[] = "&type=";
-char GETRequest_2[] = "&value=";
-char ID[3]; 
-char Unit[10] = UNIT;
-char data[20];
+//POST Request
+char directory[] = "/experiments/";
+
+//Experiment run number
+int run_number = X; //TO DO: Add self-incrementation of run number
 
 void setup() {
   //Configure pins for Adafruit ATWINC1500 Feather
   WiFi.setPins(8,7,4,2);
   
   //Initialize serial and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
+  Serial.begin(115200);
+//  while (!Serial) {
+//    ; // wait for serial port to connect. Needed for native USB port only
+//  }
 
   // check for the presence of the shield:
   if (WiFi.status() == WL_NO_SHIELD) {
@@ -93,27 +86,8 @@ void setup() {
     delay(10000);
   }
   Serial.println("Connected to WiFi");
+  Blink(LED, 40, 3);
   printWiFiStatus();
-
-  Serial.println("\nStarting connection to server...");
-  // if you get a connection, report back via serial:
-  if (client.connect(server, 8000)) {
-    Serial.println("connected to server");
-    // Make a HTTP request:
-    client.println("GET /query/?id=test&value=2");
-    //client.println("Host: www.google.com");
-    client.println("Connection: close");
-    client.println();
-  }
-
-  // Construct the query string using defined variables
-  ltoa(IDENTIFIER, ID, 10);
-  strcat(GETRequest_0, ID);
-  strcat(GETRequest_0, GETRequest_1);
-  strcat(GETRequest_0, Unit);
-  strcat(GETRequest_0, GETRequest_2);
-
-  memcpy(GETRequest, GETRequest_0, sizeof(GETRequest_0) / sizeof(GETRequest_0[0]));
 }
 
 void loop() {
@@ -121,20 +95,57 @@ void loop() {
   // from the server, read them and print them:
 
   // Get temperature from thermistor and add to query string
+  char * querystring;
+  char * querystring2;
+  char * querystring3;
+  querystring = "sensor=test&run=";
+  querystring2 = "&data_type=temp&data=";
+  querystring3 = "&battery_volt=";
+  char temp_data[10];
   long thermistorTemp = 1e6 * getTemp();
-  ltoa(thermistorTemp, data, 10);
-  strcat(GETRequest_0, data);
+  ltoa(thermistorTemp, temp_data, 10);
+  char run_number_string[10];
+  ltoa(run_number, run_number_string, 10);
+  char bat_volt_data[10];
+  long batteryVolt = 1e6 * getBat();
+  ltoa(batteryVolt, bat_volt_data, 10);
+  Serial.print("Temperature (C) = "); Serial.println(thermistorTemp / 1e6);
+  Serial.print("Battery Votlage (V) = "); Serial.println(batteryVolt / 1e6);
+
+  char* str1 = concatenate(querystring, run_number_string);
+  char* str2 = concatenate(querystring2, temp_data);
+  char* str3 = concatenate(querystring3, bat_volt_data);
+  char* post_request_temp = concatenate(str1, str2);
+  char* post_request = concatenate(post_request_temp, str3);
+  int len_post_request = strlen(querystring) + 
+                         strlen(querystring2) + 
+                         strlen(querystring3) +
+                         strlen(run_number_string) + 
+                         strlen(temp_data) +
+                         strlen(bat_volt_data);
+  //Serial.println(len_post_request);
+  Serial.println(post_request);
+
+  float battery_voltage = getBat();
 
   Serial.println("\nStarting connection to server...");
   // if you get a connection, report back via serial:
   if (client.connect(server, 8000)) {
     Serial.println("connected to server");
     // Make a HTTP request:
-    client.println(GETRequest_0);
-    //client.println("Host: www.google.com");
-    client.println("Connection: close");
+    //client.println(GETRequest_0);
+    client.print("POST /experiments/");
+    client.println(" HTTP/1.1");
+    client.println("Host: 192.168.86.46");
+    client.println("User-Agent: Arduino/1.0");
+    //client.println("Connection: close");
+    client.println("Content-Type: application/x-www-form-urlencoded");
+    client.print("Content-Length: ");
+    client.println(len_post_request);
     client.println();
+    client.print(post_request);
     Serial.println("Sent Data Successfuly!");
+    Serial.println();
     Blink(LED, 40, 1);
   }
   
@@ -152,10 +163,6 @@ void loop() {
     // do nothing forevermore:
     //while (true);
   }
-
-  //Clear and reset GETRequest query string
-  memset(GETRequest_0, NULL, sizeof(GETRequest_0) / sizeof(GETRequest_0[0]));
-  memcpy(GETRequest_0, GETRequest, sizeof(GETRequest_0) / sizeof(GETRequest_0[0]));
   
   delay(1000); //TO DO: Adjust to vary transmission rate
 }
@@ -184,6 +191,23 @@ void printWiFiStatus() {
   Serial.print("signal strength (RSSI):");
   Serial.print(rssi);
   Serial.println(" dBm");
+}
+char * concatenate(char * a, char * b) {
+  int len_a = strlen(a);
+  int len_b = strlen(b);
+  char * result = (char *) malloc(len_a + len_b + 1);
+  strcpy(result, a);
+  strcpy(result + len_a, b);
+  return result;
+}
+
+float getBat() {
+  float measuredvbat = analogRead(VBATPIN);
+  measuredvbat *= 2;
+  measuredvbat *= 3.3;
+  measuredvbat /= 1024;
+  // Serial.print("VBat: "); Serial.println(measuredvbat);
+  return measuredvbat;
 }
 
 float getTemp() {
