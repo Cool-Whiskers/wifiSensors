@@ -23,6 +23,7 @@
 #include <SPI.h>
 #include <WiFi101.h>
 #include <string.h>
+#include <ArduinoJson.h>
 
 #include "arduino_secrets.h" 
 ///////please enter your sensitive data in the Secret tab/arduino_secrets.h
@@ -56,7 +57,7 @@ int samples[NUMSAMPLES];
 char directory[] = "/experiments/";
 
 //Experiment run number
-int run_number = X; //TO DO: Add self-incrementation of run number
+int run_number = 11; //TO DO: Add self-incrementation of run number
 
 void setup() {
   //Configure pins for Adafruit ATWINC1500 Feather
@@ -88,45 +89,24 @@ void setup() {
   Serial.println("Connected to WiFi");
   Blink(LED, 40, 3);
   printWiFiStatus();
+
+  // Enable automatic sleep
+  WiFi.lowPowerMode();
 }
 
+char buf[128];
+const int capacity = JSON_OBJECT_SIZE(5);
+StaticJsonDocument<capacity> doc;
+
 void loop() {
-  // if there are incoming bytes available
-  // from the server, read them and print them:
-
-  // Get temperature from thermistor and add to query string
-  char * querystring;
-  char * querystring2;
-  char * querystring3;
-  querystring = "sensor=test&run=";
-  querystring2 = "&data_type=temp&data=";
-  querystring3 = "&battery_volt=";
-  char temp_data[10];
-  long thermistorTemp = 1e6 * getTemp();
-  ltoa(thermistorTemp, temp_data, 10);
-  char run_number_string[10];
-  ltoa(run_number, run_number_string, 10);
-  char bat_volt_data[10];
-  long batteryVolt = 1e6 * getBat();
-  ltoa(batteryVolt, bat_volt_data, 10);
-  Serial.print("Temperature (C) = "); Serial.println(thermistorTemp / 1e6);
-  Serial.print("Battery Votlage (V) = "); Serial.println(batteryVolt / 1e6);
-
-  char* str1 = concatenate(querystring, run_number_string);
-  char* str2 = concatenate(querystring2, temp_data);
-  char* str3 = concatenate(querystring3, bat_volt_data);
-  char* post_request_temp = concatenate(str1, str2);
-  char* post_request = concatenate(post_request_temp, str3);
-  int len_post_request = strlen(querystring) + 
-                         strlen(querystring2) + 
-                         strlen(querystring3) +
-                         strlen(run_number_string) + 
-                         strlen(temp_data) +
-                         strlen(bat_volt_data);
-  //Serial.println(len_post_request);
-  Serial.println(post_request);
-
-  float battery_voltage = getBat();
+  /* JSON Serialization and Allocation*/
+  doc["sensor"] = "JSON";
+  doc["run"] = run_number;
+  doc["data_type"] = "temp";
+  doc["data"] = getTemp();
+  doc["battery_volt"] = getBat();
+  serializeJson(doc, buf);
+  //Serial.println(sizeof(doc));
 
   Serial.println("\nStarting connection to server...");
   // if you get a connection, report back via serial:
@@ -136,18 +116,20 @@ void loop() {
     //client.println(GETRequest_0);
     client.print("POST /experiments/");
     client.println(" HTTP/1.1");
-    client.println("Host: 192.168.86.46");
+    client.println("Host: X.X.X.X");
     client.println("User-Agent: Arduino/1.0");
     //client.println("Connection: close");
-    client.println("Content-Type: application/x-www-form-urlencoded");
+    client.println("Content-Type: application/json");
     client.print("Content-Length: ");
-    client.println(len_post_request);
+    client.println(sizeof(buf));
     client.println();
-    client.print(post_request);
+    client.print(buf);
     Serial.println("Sent Data Successfuly!");
     Serial.println();
-    Blink(LED, 40, 1);
+    //Blink(LED, 40, 1);
   }
+
+  free(post_request);
   
   while (client.available()) {
     char c = client.read();
