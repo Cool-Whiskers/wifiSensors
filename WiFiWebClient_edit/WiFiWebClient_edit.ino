@@ -23,6 +23,7 @@
 #include <SPI.h>
 #include <WiFi101.h>
 #include <string.h>
+#include <ArduinoJson.h>
 
 #include "arduino_secrets.h" 
 ///////please enter your sensitive data in the Secret tab/arduino_secrets.h
@@ -33,47 +34,40 @@ int keyIndex = 0;            // your network key Index number (needed only for W
 int status = WL_IDLE_STATUS;
 // if you don't want to use DNS (and reduce your sketch size)
 // use the numeric IP instead of the name for the server:
-//IPAddress server(74,125,232,128);  // numeric IP for Google (no DNS)
-//char server[] = "http://192.168.86.46:8000/query/?id=test&value=1";    // name address for Google (using DNS)
-IPAddress server = IPAddress(192,168,86,46);
-//192.168.86.46:8000/query/?id=test&value=1
+IPAddress server = IPAddress(X,X,X,X); //Replace X's with IPv4 Address
 
 // Initialize the Ethernet client library
 // with the IP address and port of the server
 // that you want to connect to (port 80 is default for HTTP):
 WiFiClient client;
 
-#define IDENTIFIER 2
-#define UNIT "Temp"
 #define LED 13
+#define VBATPIN A7
 
 // Thermistor
-#define THERMISTORPIN A5
-#define THERMISTORNOMINAL 614.8 //TO DO: Adjust
-#define TEMPERATURENOMINAL 22 //TO DO: Adjust
+#define THERMISTORPIN A5 // Make sure this is right pin
+#define THERMISTORNOMINAL 614.8 //TO DO: Calibrate
+#define TEMPERATURENOMINAL 22 //TO DO: Calibrate
 #define NUMSAMPLES 5
 #define BCOEFFICIENT 3950
-#define SERIESRESISTOR 100 //TO DO: Adjust
+#define SERIESRESISTOR 100 //TO DO: Calibrate
 int samples[NUMSAMPLES];
 
-// Query string
-char GETRequest[100];
-char GETRequest_0[100] = "GET /query/?id=";
-char GETRequest_1[] = "&type=";
-char GETRequest_2[] = "&value=";
-char ID[3]; 
-char Unit[10] = UNIT;
-char data[20];
+//POST Request
+char directory[] = "/experiments/";
+
+//Experiment run number
+int run_number = 11; //TO DO: Add self-incrementation of run number
 
 void setup() {
   //Configure pins for Adafruit ATWINC1500 Feather
   WiFi.setPins(8,7,4,2);
   
   //Initialize serial and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
+  Serial.begin(115200);
+//  while (!Serial) {
+//    ; // wait for serial port to connect. Needed for native USB port only
+//  }
 
   // check for the presence of the shield:
   if (WiFi.status() == WL_NO_SHIELD) {
@@ -93,50 +87,49 @@ void setup() {
     delay(10000);
   }
   Serial.println("Connected to WiFi");
+  Blink(LED, 40, 3);
   printWiFiStatus();
 
-  Serial.println("\nStarting connection to server...");
-  // if you get a connection, report back via serial:
-  if (client.connect(server, 8000)) {
-    Serial.println("connected to server");
-    // Make a HTTP request:
-    client.println("GET /query/?id=test&value=2");
-    //client.println("Host: www.google.com");
-    client.println("Connection: close");
-    client.println();
-  }
-
-  // Construct the query string using defined variables
-  ltoa(IDENTIFIER, ID, 10);
-  strcat(GETRequest_0, ID);
-  strcat(GETRequest_0, GETRequest_1);
-  strcat(GETRequest_0, Unit);
-  strcat(GETRequest_0, GETRequest_2);
-
-  memcpy(GETRequest, GETRequest_0, sizeof(GETRequest_0) / sizeof(GETRequest_0[0]));
+  // Enable automatic sleep
+  WiFi.lowPowerMode();
 }
 
-void loop() {
-  // if there are incoming bytes available
-  // from the server, read them and print them:
+char buf[128];
+const int capacity = JSON_OBJECT_SIZE(5);
+StaticJsonDocument<capacity> doc;
 
-  // Get temperature from thermistor and add to query string
-  long thermistorTemp = 1e6 * getTemp();
-  ltoa(thermistorTemp, data, 10);
-  strcat(GETRequest_0, data);
+void loop() {
+  /* JSON Serialization and Allocation*/
+  doc["sensor"] = "JSON";
+  doc["run"] = run_number;
+  doc["data_type"] = "temp";
+  doc["data"] = getTemp();
+  doc["battery_volt"] = getBat();
+  serializeJson(doc, buf);
+  //Serial.println(sizeof(doc));
 
   Serial.println("\nStarting connection to server...");
   // if you get a connection, report back via serial:
   if (client.connect(server, 8000)) {
     Serial.println("connected to server");
     // Make a HTTP request:
-    client.println(GETRequest_0);
-    //client.println("Host: www.google.com");
-    client.println("Connection: close");
+    //client.println(GETRequest_0);
+    client.print("POST /experiments/");
+    client.println(" HTTP/1.1");
+    client.println("Host: X.X.X.X");
+    client.println("User-Agent: Arduino/1.0");
+    //client.println("Connection: close");
+    client.println("Content-Type: application/json");
+    client.print("Content-Length: ");
+    client.println(sizeof(buf));
     client.println();
+    client.print(buf);
     Serial.println("Sent Data Successfuly!");
-    Blink(LED, 40, 1);
+    Serial.println();
+    //Blink(LED, 40, 1);
   }
+
+  free(post_request);
   
   while (client.available()) {
     char c = client.read();
@@ -152,10 +145,6 @@ void loop() {
     // do nothing forevermore:
     //while (true);
   }
-
-  //Clear and reset GETRequest query string
-  memset(GETRequest_0, NULL, sizeof(GETRequest_0) / sizeof(GETRequest_0[0]));
-  memcpy(GETRequest_0, GETRequest, sizeof(GETRequest_0) / sizeof(GETRequest_0[0]));
   
   delay(1000); //TO DO: Adjust to vary transmission rate
 }
@@ -184,6 +173,23 @@ void printWiFiStatus() {
   Serial.print("signal strength (RSSI):");
   Serial.print(rssi);
   Serial.println(" dBm");
+}
+char * concatenate(char * a, char * b) {
+  int len_a = strlen(a);
+  int len_b = strlen(b);
+  char * result = (char *) malloc(len_a + len_b + 1);
+  strcpy(result, a);
+  strcpy(result + len_a, b);
+  return result;
+}
+
+float getBat() {
+  float measuredvbat = analogRead(VBATPIN);
+  measuredvbat *= 2;
+  measuredvbat *= 3.3;
+  measuredvbat /= 1024;
+  // Serial.print("VBat: "); Serial.println(measuredvbat);
+  return measuredvbat;
 }
 
 float getTemp() {
